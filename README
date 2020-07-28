@@ -1,3 +1,8 @@
+https://ckdake.com/projects/zcc.html
+https://ckdake.com/content/2006/transparent-tcp-stream-encryption.html
+
+Chris Kelly Chris Lewis Zack Allen CS6250 Fall 2006 Semester Project
+
 Welcome to ZCC, the transparent tcp stream encryption suite. ZCC runs on Linux with
 iptables and can be used on clients or servers, or on proxy machines. A few 
 important things to remember:
