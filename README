@@ -1,0 +1,130 @@
+Welcome to ZCC, the transparent tcp stream encryption suite. ZCC runs on Linux with
+iptables and can be used on clients or servers, or on proxy machines. A few 
+important things to remember:
+
+-ZCC only works with ipv4. It should be fairly easy to modify it to work with ipv6
+ but we did not have time.
+-ZCC has a lot of components but only several of them are required to run. Read
+ this full document to get an understanding of the components and decide which
+ parts you need.
+
+0. Some requirements
+
+The primary component of ZCC is the packet_processor. This requires a Linux kernel
+with support (compiled in or as a module) for the ip_queue interface.  This is
+required for ZCC operation.
+
+The current encryption method in use is diffie-hellman. It requires the OpenSSL 
+library for compilation. This is required for ZCC operation unless you implement
+another encryption solution.
+
+The daemon to maintain configuration rules for iptables is zccconfigd.pl This is
+a perl file and it requires the XML::Simple module which can be easilly installed
+from CPAN.
+
+The configuration GUI for the xml configuration file for the iptables rules requires 
+atleast Java 1.4.2 with GUI support. It may work with older systems but is untested.
+
+The PKI server requires a server with PHP and Apache. It includes some .inc files for
+XMLRPC support that are only needed if your PHP installation doesn't have these files.
+
+1. Basic Flow
+
+This describes the basic flow of ZCC. This is for the current implementation utilizing
+a specific set of components, there are other ways of running ZCC.
+
+First, the configuration tool is used to create an XML file of server and client rules
+for a machine. This is done on both machines that wish to communicate. Then, the ZCC
+configuration daemon is launched to load the rules into iptables. DHServer is started
+to listen to negotiation requests for DH keys on each machine, and the packet_processor
+is started on each machine to handle the packets. Thats it!
+
+For example:  machine A is running an unencrypted webserver, and machine B is using
+a web browser. They are configured as described above and all the daemons are running.
+When A types in the url for B in their web browser, iptables on A redirect the packets
+to the ip_queue where packet_processor reads them. packet_processor calls encrypt on
+the outgoing packets, and the current encryption tool then calls DHClient to negotiate
+a diffie-hellman key with B.  The DHServer on B responds and the machines negotiate a
+shared secret. packet_processor then encrypts the packet, passes it back to ip_queue, 
+and sends it on it's way.  When machine B received the packet, ip_queue passes it to
+packet_processor which decrypts the packet and sends it back to ip_queue. ip_queue then
+finally accepts the packet where it is received by the webserver on B. When the webserver
+responds, the same process repeats but with B doing the encryption and A doing the
+encryption. 
+
+As far as the client and server applications know, they are speaking in cleartext but
+all traffic visibile on the network is encrypted!
+
+2. Getting it Running
+
+-have iptables running with the ip_queue module loaded into your kernel
+-have your server running 
+-create the XML config file either by hand or with the config tool, here's an example:
+
+<?xml version='1.0'?>
+<services>
+        <service name = "My Telnet Server" host = "192.168.2.6"  
+		port = "23" type = "server" scheme = "AES-1024"  
+		encrypt = "true" />
+	<service name = "My Web Server" host = "192.168.2.6"
+		port = "80" type = "server" scheme = "AES-1024"
+		encrypt = "true" />
+</services>
+
+-launch the configuration daemon
+
+	./zcconcfigd.pl
+
+-launch the diffie-hellman server. It will store keys in zcc/keys/. Edit DHClienet.cpp,
+  HandleTCPClient.cpp, and zccencryption.cpp if you wish to change this location
+
+	cd diffie-helman && make && ./DHServer
+
+-launch the packet_processor
+
+	cd packetprocessor && make && ./packet_processor
+
+-try out your applications!
+
+-if things don't play nicely, you can change the #define DEBUG in several of the source
+ files and recompile the programs. This will print out a _lot_ of debug information that
+ may or may not be useful.
+
+-to install the PKI server (currently not used for encryption), load the zcc_create.sql 
+ file in adminserver into your mysql installation, copy the files into a directory on your
+ web server, and secure the directory using HTTP authentication. It exposes an xml-rpc
+ meethod for getting public keys with as well as an HTML gui for managing public keys 
+ on the server.
+
+3. Making changes
+-To add or change a service, either edit the xml file by hand or use the configuration GUI.
+ Then, just send a HUP signal to the configuration daemon to have it update the rules in
+ iptables ("kill -HUP `pidof zccconfigd.pl`" may do the trick).  This will ensure that
+ no packets are dropped when iptables is being reconfigured. All other components of the
+ system can be left running and they will automatically work with any service changes!
+
+-in the configuraiton gui. to run it, type
+	make && java KeyClient
+
+	Click the 'Add Entry' button to enable encryption for a new
+        service. Select a service, host, port number, service type, and
+        encryption scheme, and click the 'Submit' button. If any desired
+        selections are unavailable, they can be added with the
+        appropriate 'Add xxx' button.
+
+	Encryption for a particular entry can be toggled from the main
+        menu by highlighting it and clicking the 'Toggle Selected'
+        button.
+
+        Entries can be removed altogether by highlighting them and then
+        clicking the 'Remove Selected' button.
+
+        Settings can be committed by clicking the 'Export to XML' button.
+        The ZCC Daemon must be sent a HUP signal, however, before
+        the new setttings will take effect.
+
+4. Some notes
+We left some files in the "unused" folder that may be useful to people implementing things
+on top of ZCC. PacketFragmentation should support fragementing packets when a packet size
+is increased over the MTU as a result of the encryption method. get_key is used to use
+xmlrpc in C to get a public key from the PKI server.
